@@ -1,0 +1,17 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/taskpilot/*.log
+    json.keys_under_root: true
+    json.add_error_key: true
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "taskpilot-logs-%{+yyyy.MM.dd}"
+
+setup.template.name: "taskpilot-logs"
+setup.template.pattern: "taskpilot-logs-*"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.codec: best_compression

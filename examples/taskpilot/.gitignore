@@ -1,0 +1,49 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# direnv
+.envrc.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+**/*.egg-info/
+dist/
+build/
+
+# Environment
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.tasks.json
+
+# Observability data
+traces.jsonl
+decision_logs.jsonl
+metrics.jsonl
+
+# Logs
+logs/*.log
+!logs/.gitkeep
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.hypothesis/
+coverage.xml
+Thumbs.db

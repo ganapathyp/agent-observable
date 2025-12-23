@@ -1,0 +1,48 @@
+groups:
+  - name: llm_golden_signals
+    interval: 1m
+    rules:
+      - alert: LowSuccessRate
+        expr: (workflow_success / workflow_runs) * 100 < 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Success rate below 90%"
+          description: "Success rate is {{ $value | humanizePercentage }}% (threshold: 90%). Current: {{ $value }}%"
+
+      - alert: HighLatency
+        expr: workflow_latency_ms_p95 > 10000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "p95 latency above 10s"
+          description: "p95 latency is {{ $value | humanize }}ms (threshold: 10s)"
+
+      - alert: HighCostPerTask
+        expr: llm_cost_total / workflow_success > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cost per task above $1.00"
+          description: "Cost per task is ${{ $value | humanize }} (threshold: $1.00)"
+
+      - alert: LowCorrectness
+        expr: (llm_quality_user_confirmed_correct / (llm_quality_user_confirmed_correct + llm_quality_user_confirmed_incorrect)) * 100 < 70
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "User-confirmed correctness below 70%"
+          description: "Correctness is {{ $value | humanizePercentage }}% (threshold: 70%)"
+
+      - alert: HighViolationRate
+        expr: (policy_violations_total / workflow_runs) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Policy violation rate above 5%"
+          description: "Violation rate is {{ $value | humanizePercentage }}% (threshold: 5%)"
