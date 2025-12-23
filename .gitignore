@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDEs / Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs & runtime artifacts
+*.log
+*.jsonl
+logs/
+traces/
+.env
+.env.local
+
+# Build / packaging
+dist/
+build/
+*.egg-info/
+
