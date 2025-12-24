@@ -41,71 +41,17 @@ def _detect_agent_type(agent_name: str) -> Optional[AgentType]:
     return None
 
 
-def _extract_text_from_messages(messages) -> str:
-    """Extract text from message list (project-specific for MS Agent Framework)."""
-    if not messages:
-        return ""
-    
-    # Look for user messages first
-    for msg in reversed(messages):
-        if hasattr(msg, 'role') and msg.role == 'user':
-            if hasattr(msg, 'content'):
-                from agent_observable_core.structured_output import extract_text_from_response
-                return extract_text_from_response(msg.content)
-            if hasattr(msg, 'text'):
-                return msg.text
-    
-    # Fallback: get text from last message
-    if messages:
-        last_msg = messages[-1]
-        if hasattr(last_msg, 'content'):
-            from agent_observable_core.structured_output import extract_text_from_response
-            return extract_text_from_response(last_msg.content)
-        if hasattr(last_msg, 'text'):
-            return last_msg.text
-    
-    return ""
+def detect_agent_type(agent_name: str) -> Optional[AgentType]:
+    """Public function to detect agent type (for use in middleware)."""
+    return _detect_agent_type(agent_name)
 
 
-def _extract_output_from_context(context: Any, result: Any) -> str:
-    """Extract output text from context/result (project-specific for MS Agent Framework)."""
-    from agent_observable_core.structured_output import extract_text_from_response
-    
-    # Check if result is an async generator
-    is_async_gen = False
-    if hasattr(result, '__class__'):
-        class_name = result.__class__.__name__
-        if 'async_generator' in class_name.lower() or 'generator' in class_name.lower():
-            is_async_gen = True
-    
-    # Primary: Check context.result.agent_run_response.text
-    if not is_async_gen and hasattr(result, 'agent_run_response'):
-        agent_response = result.agent_run_response
-        if hasattr(agent_response, 'text') and agent_response.text:
-            return agent_response.text
-        elif hasattr(agent_response, 'messages') and agent_response.messages:
-            last_msg = agent_response.messages[-1]
-            if hasattr(last_msg, 'content'):
-                return extract_text_from_response(last_msg.content)
-    
-    # Check context.messages for assistant messages
-    if hasattr(context, 'messages') and context.messages:
-        assistant_messages = []
-        for msg in context.messages:
-            msg_role = getattr(msg, 'role', None)
-            role_str = str(msg_role).lower() if msg_role else ''
-            if role_str == 'assistant' or (hasattr(msg_role, 'value') and msg_role.value == 'assistant'):
-                assistant_messages.append(msg)
-        
-        if assistant_messages:
-            last_assistant = assistant_messages[-1]
-            if hasattr(last_assistant, 'content'):
-                return extract_text_from_response(last_assistant.content)
-            elif hasattr(last_assistant, 'text'):
-                return last_assistant.text
-    
-    # Fallback: use generic extractor
-    return extract_text_from_response(result) if result else ""
+# Import text extraction utilities
+from taskpilot.core.text_extraction import (  # type: ignore
+    extract_text_from_messages,
+    extract_text_from_context,
+    is_async_generator,
+)
 
 
 class TaskPilotHooks(MiddlewareHooks):
@@ -115,15 +61,20 @@ class TaskPilotHooks(MiddlewareHooks):
         self.store = get_task_store()
         self.metrics = get_metrics()
     
+    def detect_agent_type(self, agent_name: str) -> Optional[AgentType]:
+        """Detect agent type from agent name (for use in middleware)."""
+        return _detect_agent_type(agent_name)
+    
     def extract_input_text(self, context: Any) -> str:
         """Extract input text from MS Agent Framework context."""
         if hasattr(context, 'messages'):
-            return _extract_text_from_messages(context.messages)
+            return extract_text_from_messages(context.messages)
         return super().extract_input_text(context)
     
     def extract_output_text(self, context: Any, result: Any) -> str:
         """Extract output text from MS Agent Framework context/result."""
-        return _extract_output_from_context(context, result)
+        is_async_gen = is_async_generator(result) if result else False
+        return extract_text_from_context(context, is_async_gen)
     
     def on_agent_start(
         self,
@@ -243,4 +194,7 @@ class TaskPilotHooks(MiddlewareHooks):
 __all__ = [
     "TaskPilotHooks",
     "_detect_agent_type",
+    "detect_agent_type",
+    "extract_text_from_messages",
+    "extract_text_from_context",
 ]
