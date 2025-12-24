@@ -3,7 +3,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from taskpilot.core.task_store import TaskStore
-from taskpilot.core.observability import MetricsCollector
+from agent_observable_core.observability import MetricsCollector
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -21,11 +21,11 @@ def setup_test_environment():
 def reset_global_metrics_collector():
     """Reset global metrics collector before each test to avoid file I/O issues."""
     # Reset the global singleton to None so it gets recreated in test mode
-    import taskpilot.core.observability as obs_module
-    obs_module._metrics_collector = None
+    import taskpilot.core.observable as obs_module
+    obs_module._metrics = None
     yield
     # Clean up after test
-    obs_module._metrics_collector = None
+    obs_module._metrics = None
 
 
 @pytest.fixture

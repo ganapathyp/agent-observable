@@ -1,6 +1,8 @@
 """Validation utilities for TaskPilot."""
 from taskpilot.core.types import TaskStatus, TaskPriority, VALID_STATUS_TRANSITIONS  # type: ignore
-from taskpilot.core.exceptions import ValidationError, InputValidationError, TaskValidationError  # type: ignore
+from agent_observable_core.exceptions import ValidationError, InputValidationError  # type: ignore
+# TaskValidationError is project-specific, keep in taskpilot
+from taskpilot.core.exceptions import TaskValidationError  # type: ignore
 
 # Re-export for backward compatibility
 __all__ = ["ValidationError", "InputValidationError", "TaskValidationError", "validate_priority", "validate_title", "validate_description", "validate_status_transition"]

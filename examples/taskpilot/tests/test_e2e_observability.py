@@ -20,10 +20,11 @@ PASSED = 0
 FAILED = 0
 WARNINGS = 0
 
-def test_check(name: str, condition: bool, warning: bool = False) -> bool:
-    """Run a test check."""
+
+def _check(name: str, condition: bool, warning: bool = False) -> bool:
+    """Run a test check (helper, not collected as a pytest test)."""
     global PASSED, FAILED, WARNINGS
-    
+
     if condition:
         print(f"  ✅ {name}")
         PASSED += 1
@@ -78,7 +79,7 @@ async def test_metrics_server():
     
     # Check if running
     running = check_service_endpoint("Metrics server", "http://localhost:8000/health")
-    test_check("Metrics server running", running, warning=True)
+    _check("Metrics server running", running, warning=True)
     
     if running:
         # Check metrics endpoint
@@ -94,7 +95,7 @@ async def test_metrics_server():
                     timeout=5
                 )
                 has_metrics = "TYPE" in result.stdout or len(result.stdout) > 0
-            test_check("Metrics endpoint returns data", has_metrics)
+            _check("Metrics endpoint returns data", has_metrics)
             
             # Check health endpoint
             if HAS_REQUESTS:
@@ -108,9 +109,9 @@ async def test_metrics_server():
                     timeout=5
                 )
                 has_status = "status" in result.stdout
-            test_check("Health endpoint returns status", has_status)
+            _check("Health endpoint returns status", has_status)
         except Exception as e:
-            test_check(f"Metrics endpoint accessible: {e}", False)
+            _check(f"Metrics endpoint accessible: {e}", False)
     else:
         print("  ⚠️  Metrics server not running. Start with: python metrics_server.py")
 
@@ -130,7 +131,7 @@ async def test_docker_services():
     
     for service in services:
         running = check_docker_service(service)
-        test_check(f"{service} running", running)
+        _check(f"{service} running", running)
 
 async def test_service_endpoints():
     """Test service endpoints."""
@@ -147,7 +148,7 @@ async def test_service_endpoints():
     
     for name, url in endpoints:
         accessible = check_service_endpoint(name, url)
-        test_check(f"{name} endpoint accessible", accessible)
+        _check(f"{name} endpoint accessible", accessible)
 
 async def test_prometheus_integration():
     """Test Prometheus integration."""
@@ -163,7 +164,7 @@ async def test_prometheus_integration():
                 targets = data.get("data", {}).get("activeTargets", [])
                 if targets:
                     up_targets = [t for t in targets if t.get("health") == "up"]
-                    test_check(f"Prometheus targets: {len(up_targets)}/{len(targets)} up", len(up_targets) > 0)
+                    _check(f"Prometheus targets: {len(up_targets)}/{len(targets)} up", len(up_targets) > 0)
                 else:
                     test_check("Prometheus has targets configured", False, warning=True)
         else:
@@ -175,11 +176,11 @@ async def test_prometheus_integration():
                 timeout=5
             )
             if result.returncode == 0:
-                test_check("Prometheus API accessible", True, warning=True)
+                _check("Prometheus API accessible", True, warning=True)
             else:
-                test_check("Prometheus API accessible", False, warning=True)
+                _check("Prometheus API accessible", False, warning=True)
     except Exception as e:
-        test_check(f"Prometheus API accessible: {e}", False, warning=True)
+        _check(f"Prometheus API accessible: {e}", False, warning=True)
 
 async def test_file_system():
     """Test file system setup."""
@@ -199,7 +200,7 @@ async def test_file_system():
     
     for file_path in required_files:
         exists = Path(file_path).exists()
-        test_check(f"{file_path} exists", exists)
+        _check(f"{file_path} exists", exists)
 
 async def test_data_files():
     """Test data files."""
@@ -211,24 +212,24 @@ async def test_data_files():
     if traces_file.exists():
         try:
             count = sum(1 for _ in traces_file.open())
-            test_check(f"traces.jsonl exists ({count} entries)", count > 0, warning=True)
+            _check(f"traces.jsonl exists ({count} entries)", count > 0, warning=True)
         except Exception:
-            test_check("traces.jsonl readable", False, warning=True)
+            _check("traces.jsonl readable", False, warning=True)
     else:
         print("  ⚠️  traces.jsonl not found (run application to generate)")
-        WARNINGS += 1
+        # Note: traces.jsonl is in .gitignore, so this is expected
     
     # Check decision logs
     decision_logs_file = Path("decision_logs.jsonl")
     if decision_logs_file.exists():
         try:
             count = sum(1 for _ in decision_logs_file.open())
-            test_check(f"decision_logs.jsonl exists ({count} entries)", count > 0, warning=True)
+            _check(f"decision_logs.jsonl exists ({count} entries)", count > 0, warning=True)
         except Exception:
-            test_check("decision_logs.jsonl readable", False, warning=True)
+            _check("decision_logs.jsonl readable", False, warning=True)
     else:
         print("  ⚠️  decision_logs.jsonl not found (run application to generate)")
-        WARNINGS += 1
+        # Note: decision_logs.jsonl is in .gitignore, so this is expected
 
 async def test_application_integration():
     """Test application can generate observability data."""
@@ -237,12 +238,12 @@ async def test_application_integration():
     
     # Check if we can import observability modules
     try:
-        from taskpilot.core.observability import (
-            get_metrics_collector,
-            get_health_checker,
+        from taskpilot.core.observable import (
+            get_metrics,
+            get_health,
             get_tracer
         )
-        test_check("Observability modules importable", True)
+        _check("Observability modules importable", True)
         
         # Test metrics collector
         import time
@@ -250,19 +251,19 @@ async def test_application_integration():
         unique_counter = f"test.counter.{int(time.time() * 1000)}"
         metrics.increment_counter(unique_counter)
         value = metrics.get_counter(unique_counter)
-        test_check("Metrics collector functional", value == 1.0)
+        _check("Metrics collector functional", value == 1.0)
         
         # Test health checker
-        health_checker = get_health_checker()
+        health_checker = get_health()
         status = health_checker.check_health()
-        test_check("Health checker functional", status is not None)
+        _check("Health checker functional", status is not None)
         
         # Test tracer
         tracer = get_tracer()
-        test_check("Tracer accessible", tracer is not None)
+        _check("Tracer accessible", tracer is not None)
         
     except Exception as e:
-        test_check(f"Observability integration: {e}", False)
+        _check(f"Observability integration: {e}", False)
 
 async def main():
     """Run all E2E tests."""

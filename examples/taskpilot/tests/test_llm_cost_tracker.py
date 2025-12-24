@@ -1,12 +1,12 @@
 """Unit tests for LLM cost tracking."""
 import pytest
-from taskpilot.core.llm_cost_tracker import (
+from agent_observable_core.llm_cost_tracker import (
     extract_token_usage,
     calculate_cost,
     track_llm_metrics,
     MODEL_PRICING
 )
-from taskpilot.core.observability import MetricsCollector
+from agent_observable_core.observability import MetricsCollector
 
 
 class TestExtractTokenUsage:
@@ -189,19 +189,19 @@ class TestTrackLLMMetrics:
     
     def test_track_llm_metrics_no_usage(self):
         """Test tracking with no usage info."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         class MockResponse:
             pass
         
         response = MockResponse()
-        cost = track_llm_metrics(response, "test_agent", metrics)
+        cost = track_llm_metrics(response, "test_agent", metrics, service_name="test")
         
         assert cost is None
     
     def test_track_llm_metrics_with_usage(self):
         """Test tracking with usage info."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         class MockUsage:
             def __init__(self):
@@ -215,7 +215,7 @@ class TestTrackLLMMetrics:
                 self.model = "gpt-4o"
         
         response = MockResponse()
-        cost = track_llm_metrics(response, "planner", metrics)
+        cost = track_llm_metrics(response, "planner", metrics, service_name="test")
         
         assert cost is not None
         assert cost > 0
@@ -236,7 +236,7 @@ class TestTrackLLMMetrics:
     
     def test_track_llm_metrics_multiple_calls(self):
         """Test tracking multiple LLM calls."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         class MockUsage:
             def __init__(self, input_tokens, output_tokens):
@@ -251,11 +251,11 @@ class TestTrackLLMMetrics:
         
         # First call
         response1 = MockResponse(1000, 500)
-        cost1 = track_llm_metrics(response1, "planner", metrics)
+        cost1 = track_llm_metrics(response1, "planner", metrics, service_name="test")
         
         # Second call
         response2 = MockResponse(2000, 1000)
-        cost2 = track_llm_metrics(response2, "executor", metrics)
+        cost2 = track_llm_metrics(response2, "executor", metrics, service_name="test")
         
         # Verify aggregated metrics
         all_metrics = metrics.get_all_metrics()
@@ -270,7 +270,7 @@ class TestTrackLLMMetrics:
     
     def test_track_llm_metrics_different_models(self):
         """Test tracking with different models."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         class MockUsage:
             def __init__(self, input_tokens, output_tokens):
@@ -285,10 +285,10 @@ class TestTrackLLMMetrics:
         
         # Track with different models
         response1 = MockResponse(1000, 500, "gpt-4o")
-        cost1 = track_llm_metrics(response1, "planner", metrics)
+        cost1 = track_llm_metrics(response1, "planner", metrics, service_name="test")
         
         response2 = MockResponse(1000, 500, "gpt-4o-mini")
-        cost2 = track_llm_metrics(response2, "executor", metrics)
+        cost2 = track_llm_metrics(response2, "executor", metrics, service_name="test")
         
         # Verify model-specific metrics
         all_metrics = metrics.get_all_metrics()

@@ -76,7 +76,7 @@
         "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
         "targets": [
           {
-            "expr": "llm_cost_total / workflow_success",
+            "expr": "llm_cost_total / clamp_min(workflow_success, 1)",
             "refId": "A"
           }
         ],

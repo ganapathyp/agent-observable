@@ -51,24 +51,33 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for production configuration.
 
 ## Documentation
 
-All documentation is in the [`docs/`](docs/) directory:
+### Library Documentation (Start Here)
 
-### Essential Guides (Start Here)
-- **[REFERENCE.md](docs/REFERENCE.md)** - 🆕 Complete reference implementation guide
-- **[ONBOARDING.md](docs/ONBOARDING.md)** - Developer onboarding guide
-- **[DESIGN.md](docs/DESIGN.md)** - Architecture and design documentation
+**For library features (metrics, traces, policy decisions, etc.):**
+- **[agent-observable-core README](../../libraries/agent-observable-core/README.md)** - Library overview
+- **[Auto-Enabled Observability](../../libraries/agent-observable-core/docs/AUTO_ENABLED_OBSERVABILITY.md)** - What's automatically tracked
+- **[Metrics Reference](../../libraries/agent-observable-core/docs/METRICS.md)** - All metrics
+- **[Traces Reference](../../libraries/agent-observable-core/docs/TRACES.md)** - Distributed tracing
+- **[Policy Decisions](../../libraries/agent-observable-core/docs/POLICY_DECISIONS.md)** - Policy decision logging
+- **[Docker Tools Integration](../../libraries/agent-observable-core/docs/DOCKER_TOOLS.md)** - Viewing data in Prometheus, Grafana, Jaeger, Kibana
+
+### TaskPilot Documentation
+
+All TaskPilot-specific documentation is in the [`docs/`](docs/) directory:
+
+- **[README](docs/README.md)** - Documentation index
+- **[RUN_INSTRUCTIONS.md](docs/RUN_INSTRUCTIONS.md)** - How to run TaskPilot
+- **[OBSERVABILITY_TOOLS_WALKTHROUGH.md](docs/OBSERVABILITY_TOOLS_WALKTHROUGH.md)** - Using observability tools
+- **[COST_TRACKING_GUIDE.md](docs/COST_TRACKING_GUIDE.md)** - LLM cost tracking
+- **[CONFIGURATION.md](docs/CONFIGURATION.md)** - Configuration guide
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and fixes
 
 ### Deep Dives
-- **[GUARDRAILS_ARCHITECTURE_EXPLAINED.md](docs/GUARDRAILS_ARCHITECTURE_EXPLAINED.md)** - Guardrails architecture deep dive
-- **[PRODUCTION_GUARDRAILS_ARCHITECTURE.md](docs/PRODUCTION_GUARDRAILS_ARCHITECTURE.md)** - Production guardrails design
-- **[EMBEDDED_OPA_IMPLEMENTATION.md](docs/EMBEDDED_OPA_IMPLEMENTATION.md)** - Embedded OPA implementation details
 
-### Reference
-- **[TESTING_GUIDE.md](docs/TESTING_GUIDE.md)** - Testing instructions for all workflow states
-- **[TASK_TRACKING.md](docs/TASK_TRACKING.md)** - Task storage and review flow
-- **[STRUCTURED_OUTPUT.md](docs/STRUCTURED_OUTPUT.md)** - Structured output parsing strategies
-- **[CAPABILITIES_MATRIX.md](docs/CAPABILITIES_MATRIX.md)** - Capabilities analysis vs. best practices
-- **[CHANGELOG.md](docs/CHANGELOG.md)** - Version history
+See `docs/details/` for detailed documentation:
+- **[LLM_PRODUCTION_GUIDE.md](docs/details/LLM_PRODUCTION_GUIDE.md)** - LLM production best practices
+- **[CAPABILITIES_MATRIX.md](docs/details/CAPABILITIES_MATRIX.md)** - Capabilities analysis
+- **[OBSERVABILITY_INTEGRATION.md](docs/details/OBSERVABILITY_INTEGRATION.md)** - Observability integration details
 
 ---
 

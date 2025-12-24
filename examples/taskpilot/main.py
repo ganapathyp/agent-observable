@@ -8,45 +8,47 @@ import argparse
 from pathlib import Path
 from taskpilot.agents import create_planner, create_reviewer, create_executor  # type: ignore
 from taskpilot.core import build_workflow, create_audit_and_policy_middleware  # type: ignore
-from taskpilot.core.observability import (  # type: ignore
+from taskpilot.core.observable import (  # type: ignore
     RequestContext,
-    get_metrics_collector,
-    get_health_checker,
-    get_error_tracker,
-    get_tracer
+    get_metrics,
+    get_health,
+    get_errors,
+    get_tracer,
+    setup_observability,
 )
 from taskpilot.core.metric_names import (  # type: ignore
-    WORKFLOW_RUNS,
-    WORKFLOW_SUCCESS,
-    WORKFLOW_ERRORS,
-    WORKFLOW_LATENCY_MS,
-    HEALTH_STATUS,
     HEALTH_CHECK_TASK_STORE,
     HEALTH_CHECK_GUARDRAILS
 )
-from taskpilot.core.trace_names import (  # type: ignore
-    WORKFLOW_RUN as TRACE_WORKFLOW_RUN
-)
-
-# Initialize OpenTelemetry (before other imports that might use it)
-# Note: Config is loaded after this, so we use environment variables directly here
-# The config will be loaded properly after this initialization
+from agent_observable_core import get_metric_standardizer  # type: ignore
+# Initialize observability (one-line setup)
+# This replaces all the adapter initialization code
 try:
-    from taskpilot.core.otel_integration import initialize_opentelemetry  # type: ignore
+    from pathlib import Path
+    base_dir = Path(__file__).parent
     otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
     otel_enabled = os.environ.get("OTEL_ENABLED", "true").lower() == "true"
     otel_service_name = os.environ.get("OTEL_SERVICE_NAME", "taskpilot")
-    initialize_opentelemetry(
+    
+    from agent_observable_core import get_trace_standardizer  # type: ignore
+    trace_standardizer = get_trace_standardizer(service_name=otel_service_name)
+    TRACE_WORKFLOW_RUN = trace_standardizer.workflow_run()
+    
+    setup_observability(
         service_name=otel_service_name,
+        base_dir=base_dir,
+        enable_otel=otel_enabled,
+        enable_guardrails=True,
+        enable_policy=True,
         otlp_endpoint=otlp_endpoint,
-        enabled=otel_enabled
+        guardrails_config_path=base_dir / "guardrails" / "config.yml",
+        policy_dir=base_dir / "policies",
+        prompts_dir=base_dir / "prompts",
+        decision_logs_file=base_dir / "decision_logs.jsonl",
     )
-except ImportError:
-    # OpenTelemetry packages not installed, continue without it
-    pass
 except Exception as e:
-    # OpenTelemetry initialization failed, continue without it
-    print(f"Warning: OpenTelemetry initialization failed: {e}")
+    # Observability setup failed, continue without it
+    print(f"Warning: Observability setup failed: {e}")
 
 # Load configuration early (before logging setup)
 # Wrap in try-except to handle validation errors gracefully
@@ -128,34 +130,61 @@ def create_app():
         def metrics():
             """Prometheus metrics endpoint."""
             try:
-                metrics = get_metrics_collector()
+                metrics = get_metrics()
                 all_metrics = metrics.get_all_metrics()
                 
                 lines = []
+                seen_types = {}  # Track TYPE declarations to avoid duplicates
                 
                 # Counters
                 for name, value in all_metrics.get("counters", {}).items():
                     sanitized_name = name.replace(".", "_").replace("-", "_").lower()
-                    lines.append(f"# TYPE {sanitized_name} counter")
+                    if sanitized_name not in seen_types:
+                        lines.append(f"# TYPE {sanitized_name} counter")
+                        seen_types[sanitized_name] = "counter"
                     lines.append(f"{sanitized_name} {value}")
                 
                 # Gauges
                 for name, value in all_metrics.get("gauges", {}).items():
                     sanitized_name = name.replace(".", "_").replace("-", "_").lower()
-                    lines.append(f"# TYPE {sanitized_name} gauge")
+                    if sanitized_name not in seen_types:
+                        lines.append(f"# TYPE {sanitized_name} gauge")
+                        seen_types[sanitized_name] = "gauge"
                     lines.append(f"{sanitized_name} {value}")
                 
                 # Histograms
                 for name, stats in all_metrics.get("histograms", {}).items():
                     sanitized_name = name.replace(".", "_").replace("-", "_").lower()
-                    lines.append(f"# TYPE {sanitized_name} histogram")
+                    if sanitized_name not in seen_types:
+                        lines.append(f"# TYPE {sanitized_name} histogram")
+                        seen_types[sanitized_name] = "histogram"
                     lines.append(f"{sanitized_name}_count {stats['count']}")
                     lines.append(f"{sanitized_name}_sum {stats['avg'] * stats['count']}")
                     lines.append(f"{sanitized_name}_bucket{{le=\"+Inf\"}} {stats['count']}")
                     # Also expose p95 as a gauge for easier querying
                     if stats.get('p95', 0) > 0:
-                        lines.append(f"# TYPE {sanitized_name}_p95 gauge")
-                        lines.append(f"{sanitized_name}_p95 {stats['p95']}")
+                        p95_name = f"{sanitized_name}_p95"
+                        if p95_name not in seen_types:
+                            lines.append(f"# TYPE {p95_name} gauge")
+                            seen_types[p95_name] = "gauge"
+                        lines.append(f"{p95_name} {stats['p95']}")
+                
+                # Ensure key metrics are always present (even if zero) for Prometheus discovery
+                # This helps with Grafana dashboards that expect these metrics to exist
+                key_metrics = {
+                    "llm_cost_total": ("counter", "llm.cost.total"),
+                    "policy_violations_total": ("counter", "policy.violations.total"),
+                    "workflow_runs": ("counter", "workflow.runs"),
+                    "workflow_success": ("counter", "workflow.success"),
+                    "workflow_errors": ("counter", "workflow.errors"),
+                }
+                
+                for prom_name, (metric_type, internal_name) in key_metrics.items():
+                    if prom_name not in seen_types:
+                        # Metric doesn't exist yet, initialize with 0
+                        lines.append(f"# TYPE {prom_name} {metric_type}")
+                        lines.append(f"{prom_name} 0")
+                        seen_types[prom_name] = metric_type
                 
                 return Response("\n".join(lines), media_type="text/plain")
             except Exception as e:
@@ -166,14 +195,16 @@ def create_app():
         def health():
             """Health check endpoint."""
             try:
-                health_checker = get_health_checker()
+                health_checker = get_health()
                 status = health_checker.check_health()
                 
                 # Also record health metrics for Prometheus (use standardized metric names)
-                metrics = get_metrics_collector()
+                metrics = get_metrics()
                 # Health status: 1 = healthy, 0.5 = degraded, 0 = unhealthy
                 health_value = 1.0 if status.status == "healthy" else (0.5 if status.status == "degraded" else 0.0)
-                metrics.set_gauge(HEALTH_STATUS, health_value)
+                # Use standardized health status metric
+                metric_std = get_metric_standardizer(service_name=otel_service_name)
+                metrics.set_gauge(metric_std.health_status(), health_value)
                 
                 # Record individual check statuses
                 for check_name, check_result in status.checks.items():
@@ -190,17 +221,40 @@ def create_app():
                 logger.error(f"Error checking health: {e}", exc_info=True)
                 # Record error in metrics
                 try:
-                    metrics = get_metrics_collector()
-                    metrics.set_gauge(HEALTH_STATUS, 0.0)
+                    metrics = get_metrics()
+                    metric_std = get_metric_standardizer(service_name=otel_service_name)
+                    metrics.set_gauge(metric_std.health_status(), 0.0)
                 except:
                     pass
                 return {"status": "error", "error": str(e)}, 500
+        
+        @app.get("/cost-report")
+        def cost_report(format: str = "text"):
+            """Cost tracking report endpoint.
+            
+            Args:
+                format: Output format ('text', 'json', 'csv')
+            """
+            try:
+                from taskpilot.core.cost_viewer import create_cost_viewer
+                viewer = create_cost_viewer()
+                report = viewer.get_cost_report(format=format)
+                
+                if format == "json":
+                    return Response(report, media_type="application/json")
+                elif format == "csv":
+                    return Response(report, media_type="text/csv")
+                else:
+                    return Response(report, media_type="text/plain")
+            except Exception as e:
+                logger.error(f"Error generating cost report: {e}", exc_info=True)
+                return {"error": str(e)}, 500
         
         @app.get("/golden-signals")
         def golden_signals():
             """Golden Signals endpoint for LLM production monitoring."""
             try:
-                metrics = get_metrics_collector()
+                metrics = get_metrics()
                 signals = metrics.get_golden_signals()
                 
                 # Add status indicators
@@ -211,18 +265,18 @@ def create_app():
                         "critical"
                     ),
                     "p95_latency": (
-                        "healthy" if signals["p95_latency_ms"] < 2000 else
-                        "warning" if signals["p95_latency_ms"] < 5000 else
+                        "healthy" if signals["p95_latency"] < 2000 else
+                        "warning" if signals["p95_latency"] < 5000 else
                         "critical"
                     ),
                     "cost_per_task": (
-                        "healthy" if signals["cost_per_successful_task_usd"] < 0.10 else
-                        "warning" if signals["cost_per_successful_task_usd"] < 0.50 else
+                        "healthy" if signals["cost_per_successful_task"] < 0.10 else
+                        "warning" if signals["cost_per_successful_task"] < 0.50 else
                         "critical"
                     ),
                     "policy_violations": (
-                        "healthy" if signals["policy_violation_rate_percent"] < 1 else
-                        "warning" if signals["policy_violation_rate_percent"] < 2 else
+                        "healthy" if signals["policy_violation_rate"] < 1 else
+                        "warning" if signals["policy_violation_rate"] < 2 else
                         "critical"
                     )
                 }
@@ -259,7 +313,7 @@ async def run_workflow_once():
     """Run a single workflow execution."""
     try:
         # Initialize health checks
-        health_checker = get_health_checker()
+        health_checker = get_health()
         
         # Register health checks
         def check_task_store():
@@ -275,14 +329,11 @@ async def run_workflow_once():
         def check_guardrails():
             """Check guardrails health."""
             try:
-                from taskpilot.core.guardrails.nemo_rails import NeMoGuardrailsWrapper
-                config_path = None
-                if paths.guardrails_config_dir:
-                    config_path = paths.guardrails_config_dir / "config.yml"
-                    if not config_path.exists():
-                        config_path = None
-                guardrails = NeMoGuardrailsWrapper(config_path=config_path)
-                return guardrails._enabled, "Guardrails available" if guardrails._enabled else "Guardrails disabled", {}
+                from taskpilot.core.observable import get_guardrails
+                guardrails = get_guardrails()
+                if guardrails:
+                    return guardrails._enabled, "Guardrails available" if guardrails._enabled else "Guardrails disabled", {}
+                return False, "Guardrails not configured", {}
             except Exception as e:
                 return False, f"Guardrails error: {str(e)}", {}
         
@@ -302,7 +353,7 @@ async def run_workflow_once():
                 executor = create_executor()
                 logger.info("Agents created successfully")
             except Exception as e:
-                from taskpilot.core.observability import record_error
+                from taskpilot.core.observable import record_error
                 record_error(e, operation="create_agents")
                 logger.error(f"Error creating agents: {e}")
                 logger.error("Make sure OPENAI_API_KEY is set in .env file")
@@ -320,7 +371,7 @@ async def run_workflow_once():
                 workflow = build_workflow(planner, reviewer, executor)
                 logger.info("Workflow built successfully")
             except Exception as e:
-                from taskpilot.core.observability import record_error
+                from taskpilot.core.observable import record_error
                 record_error(e, operation="build_workflow", request_id=request_id)
                 logger.error(f"Error building workflow: {e}")
                 raise
@@ -328,13 +379,15 @@ async def run_workflow_once():
             # Run workflow with root span for hierarchy
             try:
                 logger.info(f"Running workflow... (request_id={request_id})")
-                metrics = get_metrics_collector()
-                metrics.increment_counter(WORKFLOW_RUNS)
+                metrics = get_metrics()
+                # Use standardized metric names
+                metric_std = get_metric_standardizer(service_name=otel_service_name)
+                metrics.increment_counter(metric_std.workflow_runs())
                 
-                # Create workflow-level root span
-                from taskpilot.core.observability import TraceContext
+                # Create workflow-level root span (use standardized trace name)
+                from taskpilot.core.observable import TraceContext
                 with TraceContext(
-                    name="workflow.run",
+                    name=TRACE_WORKFLOW_RUN,  # "taskpilot.workflow.run"
                     request_id=request_id,
                     tags={"workflow_type": "task_creation"}
                 ) as workflow_span:
@@ -347,8 +400,10 @@ async def run_workflow_once():
                     # Add workflow metrics to span
                     workflow_span.tags["workflow_latency_ms"] = str(workflow_latency)
                     workflow_span.tags["workflow_success"] = "true"
-                metrics.record_histogram("workflow.latency_ms", workflow_latency)
-                metrics.increment_counter("workflow.success")
+                    
+                    # Record workflow metrics (use standardized names)
+                    metrics.record_histogram(metric_std.workflow_latency_ms(), workflow_latency)
+                    metrics.increment_counter(metric_std.workflow_success())
                 
                 logger.info(f"Workflow completed successfully (request_id={request_id}, latency={workflow_latency:.2f}ms)")
                 
@@ -392,10 +447,10 @@ async def run_workflow_once():
                 print(result)
                 return result
             except Exception as e:
-                from taskpilot.core.observability import record_error
+                from taskpilot.core.observable import record_error
                 record_error(e, operation="run_workflow", request_id=request_id)
-                metrics = get_metrics_collector()
-                metrics.increment_counter(WORKFLOW_ERRORS)
+                metrics = get_metrics()
+                metrics.increment_counter(metric_std.workflow_errors())
                 logger.error(f"Error running workflow: {e} (request_id={request_id})", exc_info=True)
                 raise
     
@@ -403,7 +458,7 @@ async def run_workflow_once():
         logger.warning("Workflow interrupted by user")
         raise
     except Exception as e:
-        from taskpilot.core.observability import record_error
+        from taskpilot.core.observable import record_error
         record_error(e, operation="run_workflow_once")
         logger.exception(f"Unexpected error in workflow: {e}")
         raise
@@ -412,48 +467,35 @@ async def main(server_mode: bool = False, port: int = 8000):
     """Main entry point.
     
     Args:
-        server_mode: If True, run as HTTP server with integrated metrics. If False, run once and exit.
+        server_mode: If True, run only HTTP server with metrics endpoints (no workflow). If False, run workflow once and exit.
         port: Port for HTTP server (only used in server_mode)
     """
     try:
         if server_mode:
-            # Server mode: Run HTTP server with workflow in background
+            # Server mode: Run HTTP server ONLY (metrics/health endpoints, no workflow)
             app = create_app()
             if app is None:
                 logger.error("FastAPI not available. Install with: pip install fastapi uvicorn")
-                logger.error("Falling back to script mode...")
-                server_mode = False
-            else:
-                logger.info(f"Starting TaskPilot in server mode on port {port}")
-                logger.info(f"  Metrics: http://localhost:{port}/metrics")
-                logger.info(f"  Health: http://localhost:{port}/health")
-                logger.info(f"  Golden Signals: http://localhost:{port}/golden-signals")
-                
-                # Run workflow in background task
-                async def workflow_loop():
-                    """Background task to run workflows periodically."""
-                    while True:
-                        try:
-                            await run_workflow_once()
-                            await asyncio.sleep(app_config.workflow_interval_seconds)
-                        except KeyboardInterrupt:
-                            logger.info("Workflow loop stopped")
-                            break
-                        except Exception as e:
-                            logger.error(f"Error in workflow loop: {e}", exc_info=True)
-                            await asyncio.sleep(10)  # Wait before retry
-                
-                # Start workflow loop
-                asyncio.create_task(workflow_loop())
-                
-                # Start HTTP server
-                import uvicorn
-                uvicorn_config = uvicorn.Config(app, host=app_config.host, port=port, log_level="info")
-                server = uvicorn.Server(uvicorn_config)
-                await server.serve()
-                return
+                logger.error("Cannot run in server mode without FastAPI")
+                sys.exit(1)
+            
+            logger.info(f"Starting TaskPilot metrics server on port {port}")
+            logger.info(f"  Metrics: http://localhost:{port}/metrics")
+            logger.info(f"  Health: http://localhost:{port}/health")
+            logger.info(f"  Golden Signals: http://localhost:{port}/golden-signals")
+            logger.info(f"  Cost Report: http://localhost:{port}/cost-report")
+            logger.info("")
+            logger.info("Note: Server mode only exposes metrics endpoints.")
+            logger.info("      Run workflows separately: python main.py <task_description>")
+            
+            # Start HTTP server (no workflow loop)
+            import uvicorn
+            uvicorn_config = uvicorn.Config(app, host=app_config.host, port=port, log_level="info")
+            server = uvicorn.Server(uvicorn_config)
+            await server.serve()
+            return
         
-        # Script mode: Run workflow once and exit
+        # Workflow mode: Run workflow once and exit
         try:
             await run_workflow_once()
             
@@ -473,7 +515,10 @@ async def main(server_mode: bool = False, port: int = 8000):
             
             # Stop OpenTelemetry trace export worker
             try:
-                from taskpilot.core.otel_integration import shutdown_opentelemetry
+                from taskpilot.core.observable import get_otel
+                otel = get_otel()
+                if otel:
+                    await otel.shutdown()
                 await shutdown_opentelemetry()
                 logger.debug("OpenTelemetry shutdown complete")
             except Exception as e:
@@ -490,7 +535,7 @@ async def main(server_mode: bool = False, port: int = 8000):
         logger.warning("Interrupted by user")
         sys.exit(130)
     except Exception as e:
-        from taskpilot.core.observability import record_error
+        from taskpilot.core.observable import record_error
         record_error(e, operation="main")
         logger.exception(f"Unexpected error: {e}")
         sys.exit(1)
@@ -500,7 +545,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--server",
         action="store_true",
-        help="Run as HTTP server with integrated metrics (production mode)"
+        help="Run as HTTP server with metrics endpoints only (no workflow execution). Keep this running for Prometheus scraping."
     )
     parser.add_argument(
         "--port",

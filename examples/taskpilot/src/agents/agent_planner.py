@@ -7,7 +7,7 @@ guaranteeing valid JSON output without requiring parsing strategies.
 from agent_framework.openai import OpenAIChatClient  # type: ignore
 from taskpilot.core.config import get_config  # type: ignore
 from taskpilot.core.models import TaskInfo  # type: ignore
-from taskpilot.core.prompt_loader import load_prompt  # type: ignore
+from taskpilot.core.observable import load_prompt  # type: ignore
 from taskpilot.tools import create_task  # type: ignore
 
 def create_planner():

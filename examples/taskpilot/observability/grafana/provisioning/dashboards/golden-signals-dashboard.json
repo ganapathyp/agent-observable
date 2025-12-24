@@ -112,7 +112,7 @@
       },
       "targets": [
         {
-          "expr": "llm_cost_total / workflow_success",
+          "expr": "llm_cost_total / clamp_min(workflow_success, 1)",
           "refId": "A"
         }
       ],

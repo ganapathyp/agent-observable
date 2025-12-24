@@ -3,8 +3,8 @@ import asyncio
 import logging
 import time
 from typing import Callable, Awaitable, Any, Optional, Dict
-from taskpilot.core.exceptions import ToolTimeoutError, ToolExecutionError  # type: ignore
-from taskpilot.core.config import get_app_config  # type: ignore
+
+from agent_observable_core.exceptions import ToolTimeoutError, ToolExecutionError  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ async def execute_tool_with_timeout(
     # Get timeout from config if not provided
     if timeout_seconds is None:
         try:
+            from taskpilot.core.config import get_app_config
             app_config = get_app_config()
             timeout_seconds = app_config.tool_timeout_seconds
         except Exception:
@@ -61,9 +62,9 @@ async def execute_tool_with_timeout(
         
         # Track timeout metric
         try:
-            from taskpilot.core.observability import get_metrics_collector
+            from taskpilot.core.observable import get_metrics
             from taskpilot.core.metric_names import OBSERVABILITY_TRACE_EXPORT_FAILURES  # Reuse for now
-            metrics = get_metrics_collector()
+            metrics = get_metrics()
             # We could add a specific tool timeout counter here
         except Exception:
             pass
@@ -121,6 +122,7 @@ def execute_tool_sync_with_timeout(
     # Get timeout from config if not provided
     if timeout_seconds is None:
         try:
+            from taskpilot.core.config import get_app_config
             app_config = get_app_config()
             timeout_seconds = app_config.tool_timeout_seconds
         except Exception:

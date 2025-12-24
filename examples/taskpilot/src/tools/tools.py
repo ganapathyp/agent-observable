@@ -1,16 +1,29 @@
-from typing import Any
+from typing import Any, Optional
 import re
 import logging
 from agent_framework import ai_function, WorkflowContext, AgentExecutorResponse  # type: ignore
 from taskpilot.core.task_store import get_task_store, TaskStatus  # type: ignore
 from taskpilot.core.validation import validate_priority  # type: ignore
-from taskpilot.core.guardrails.opa_tool_validator import OPAToolValidator  # type: ignore
+from agent_observable_policy import OPAToolValidator  # type: ignore
 from taskpilot.core.types import AgentType  # type: ignore
 
 logger = logging.getLogger(__name__)
 
 # Global OPA validator instance (using embedded OPA by default)
-_opa_validator: OPAToolValidator = OPAToolValidator(use_embedded=True)
+# Note: OPA validator will be created when needed with proper configuration
+_opa_validator: Optional[OPAToolValidator] = None
+
+
+def _get_opa_validator() -> OPAToolValidator:
+    """Get or create OPA validator instance."""
+    global _opa_validator
+    if _opa_validator is None:
+        _opa_validator = OPAToolValidator(
+            use_embedded=True,
+            package="taskpilot.tool_calls",
+            service_name="taskpilot",
+        )
+    return _opa_validator
 
 
 def _get_current_agent_type() -> str:
@@ -53,7 +66,7 @@ def create_task(title: str, priority: str, description: str = "") -> str:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             allowed, reason, requires_approval = loop.run_until_complete(
-                _opa_validator.validate_tool_call(
+                _get_opa_validator().validate_tool_call(
                     tool_name="create_task",
                     parameters={"title": title, "priority": priority, "description": description},
                     agent_type=agent_type,
@@ -100,7 +113,7 @@ def notify_external_system(message: str) -> str:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             allowed, reason, requires_approval = loop.run_until_complete(
-                _opa_validator.validate_tool_call(
+                _get_opa_validator().validate_tool_call(
                     tool_name="notify_external_system",
                     parameters={"message": message},
                     agent_type=agent_type,

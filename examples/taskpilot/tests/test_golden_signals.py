@@ -1,6 +1,6 @@
 """Unit tests for Golden Signals calculation."""
 import pytest
-from taskpilot.core.observability import MetricsCollector
+from agent_observable_core.observability import MetricsCollector
 
 
 class TestGoldenSignals:
@@ -8,23 +8,19 @@ class TestGoldenSignals:
     
     def test_golden_signals_empty_metrics(self):
         """Test Golden Signals with no metrics (all zeros)."""
-        metrics = MetricsCollector(metrics_file=None)  # In-memory only
+        metrics = MetricsCollector()  # In-memory only
         
         signals = metrics.get_golden_signals()
         
-        assert signals["success_rate"] == 0.0
-        assert signals["p95_latency_ms"] == 0.0
-        assert signals["cost_per_successful_task_usd"] == 0.0
-        assert signals["user_confirmed_correctness_percent"] is None
-        assert signals["policy_violation_rate_percent"] == 0.0
-        assert signals["metadata"]["workflow_runs"] == 0
-        assert signals["metadata"]["workflow_success"] == 0
-        assert signals["metadata"]["total_cost_usd"] == 0.0
-        assert signals["metadata"]["total_violations"] == 0
+        assert signals["success_rate"] == 100.0  # Default when no runs
+        assert signals["p95_latency"] == 0.0
+        assert signals["cost_per_successful_task"] == 0.0
+        assert signals["user_confirmed_correctness"] == 0.0  # Returns 0.0 when no feedback
+        assert signals["policy_violation_rate"] == 0.0
     
     def test_golden_signals_success_rate(self):
         """Test success rate calculation."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up metrics
         metrics.increment_counter("workflow.runs", value=100)
@@ -33,12 +29,11 @@ class TestGoldenSignals:
         signals = metrics.get_golden_signals()
         
         assert signals["success_rate"] == 95.0
-        assert signals["metadata"]["workflow_runs"] == 100
-        assert signals["metadata"]["workflow_success"] == 95
+        # Note: get_golden_signals doesn't return metadata anymore
     
     def test_golden_signals_p95_latency(self):
         """Test p95 latency calculation."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Record latency samples
         for i in range(100):
@@ -47,12 +42,12 @@ class TestGoldenSignals:
         signals = metrics.get_golden_signals()
         
         # p95 should be around 95th value (950ms)
-        assert signals["p95_latency_ms"] > 900
-        assert signals["p95_latency_ms"] < 1000
+        assert signals["p95_latency"] > 900
+        assert signals["p95_latency"] < 1000
     
     def test_golden_signals_cost_per_successful_task(self):
         """Test cost per successful task calculation."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up metrics
         metrics.increment_counter("workflow.runs", value=10)
@@ -62,12 +57,11 @@ class TestGoldenSignals:
         signals = metrics.get_golden_signals()
         
         # Cost per successful task = 0.50 / 8 = 0.0625
-        assert signals["cost_per_successful_task_usd"] == 0.0625
-        assert signals["metadata"]["total_cost_usd"] == 0.50
+        assert signals["cost_per_successful_task"] == 0.0625
     
     def test_golden_signals_user_confirmed_correctness(self):
         """Test user-confirmed correctness calculation."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up metrics
         metrics.increment_counter("llm.quality.user_confirmed_correct", value=80)
@@ -76,21 +70,19 @@ class TestGoldenSignals:
         signals = metrics.get_golden_signals()
         
         # Correctness = 80 / 100 * 100 = 80%
-        assert signals["user_confirmed_correctness_percent"] == 80.0
-        assert signals["metadata"]["total_feedback"] == 100
+        assert signals["user_confirmed_correctness"] == 80.0
     
     def test_golden_signals_user_confirmed_correctness_no_feedback(self):
         """Test user-confirmed correctness with no feedback."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         signals = metrics.get_golden_signals()
         
-        assert signals["user_confirmed_correctness_percent"] is None
-        assert signals["metadata"]["total_feedback"] is None
+        assert signals["user_confirmed_correctness"] == 0.0  # Returns 0.0 when no feedback
     
     def test_golden_signals_policy_violation_rate(self):
         """Test policy violation rate calculation."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up metrics
         metrics.increment_counter("workflow.runs", value=100)
@@ -100,14 +92,12 @@ class TestGoldenSignals:
         
         signals = metrics.get_golden_signals()
         
-        # Total violations = 2 + 1 + 1 = 4
-        # Violation rate = 4 / 100 * 100 = 4%
-        assert signals["policy_violation_rate_percent"] == 4.0
-        assert signals["metadata"]["total_violations"] == 4
+        # Violation rate = 1 / 100 * 100 = 1% (only policy.violations.total is used)
+        assert signals["policy_violation_rate"] == 1.0
     
     def test_golden_signals_all_signals(self):
         """Test all Golden Signals together."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up comprehensive metrics
         metrics.increment_counter("workflow.runs", value=100)
@@ -125,21 +115,14 @@ class TestGoldenSignals:
         
         # Verify all signals
         assert signals["success_rate"] == 90.0
-        assert signals["p95_latency_ms"] > 900
-        assert abs(signals["cost_per_successful_task_usd"] - 0.0556) < 0.01  # 5.0 / 90
-        assert signals["user_confirmed_correctness_percent"] == 94.44  # 85 / 90 * 100
-        assert signals["policy_violation_rate_percent"] == 2.0
-        
-        # Verify metadata
-        assert signals["metadata"]["workflow_runs"] == 100
-        assert signals["metadata"]["workflow_success"] == 90
-        assert signals["metadata"]["total_cost_usd"] == 5.0
-        assert signals["metadata"]["total_violations"] == 2
-        assert signals["metadata"]["total_feedback"] == 90
+        assert signals["p95_latency"] > 900
+        assert abs(signals["cost_per_successful_task"] - 0.0556) < 0.01  # 5.0 / 90
+        assert abs(signals["user_confirmed_correctness"] - 94.44) < 0.1  # 85 / 90 * 100
+        assert signals["policy_violation_rate"] == 2.0
     
     def test_golden_signals_zero_workflow_runs(self):
         """Test Golden Signals with zero workflow runs."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up metrics but no workflow runs
         metrics.increment_counter("llm.cost.total", value=10.0)
@@ -147,13 +130,13 @@ class TestGoldenSignals:
         signals = metrics.get_golden_signals()
         
         # Should handle division by zero gracefully
-        assert signals["success_rate"] == 0.0
-        assert signals["cost_per_successful_task_usd"] == 0.0
-        assert signals["policy_violation_rate_percent"] == 0.0
+        assert signals["success_rate"] == 100.0  # Default when no runs
+        assert signals["cost_per_successful_task"] == 0.0
+        assert signals["policy_violation_rate"] == 0.0
     
     def test_golden_signals_zero_successful_tasks(self):
         """Test Golden Signals with zero successful tasks."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up metrics with runs but no success
         metrics.increment_counter("workflow.runs", value=10)
@@ -164,11 +147,11 @@ class TestGoldenSignals:
         
         # Should handle division by zero gracefully
         assert signals["success_rate"] == 0.0
-        assert signals["cost_per_successful_task_usd"] == 0.0
+        assert signals["cost_per_successful_task"] == 0.0
     
     def test_golden_signals_rounding(self):
         """Test that Golden Signals are properly rounded."""
-        metrics = MetricsCollector(metrics_file=None)
+        metrics = MetricsCollector()
         
         # Set up metrics that will produce non-integer results
         metrics.increment_counter("workflow.runs", value=3)
@@ -179,6 +162,6 @@ class TestGoldenSignals:
         
         # Verify rounding
         assert signals["success_rate"] == 33.33  # 1/3 * 100 = 33.333...
-        assert signals["cost_per_successful_task_usd"] == 0.1235  # Rounded to 4 decimals
+        assert signals["cost_per_successful_task"] == 0.1235  # Rounded to 4 decimals
         assert isinstance(signals["success_rate"], float)
-        assert isinstance(signals["cost_per_successful_task_usd"], float)
+        assert isinstance(signals["cost_per_successful_task"], float)

@@ -2,7 +2,7 @@
 
 This package exports:
 - Configuration management (config.py)
-- Middleware and observability (middleware.py, observability.py)
+- Middleware and observability (middleware.py, observable.py)
 - Workflow orchestration (workflow.py)
 - Standardized naming constants (metric_names.py, trace_names.py, policy_names.py)
 """
@@ -17,20 +17,18 @@ from taskpilot.core.task_store import (  # type: ignore
     Task,
     TaskStatus,
 )
-from taskpilot.core.service import TaskService  # type: ignore
 from taskpilot.core.types import TaskPriority, AgentType  # type: ignore
 from taskpilot.core.validation import ValidationError  # type: ignore
 from taskpilot.core.models import TaskInfo  # type: ignore
 from taskpilot.core.structured_output import parse_task_info_from_output  # type: ignore
-from taskpilot.core.observability import (  # type: ignore
+from taskpilot.core.observable import (  # type: ignore
     RequestContext,
     get_request_id,
-    get_metrics_collector,
-    get_error_tracker,
+    get_metrics,
+    get_errors,
     get_tracer,
-    get_health_checker,
-    record_metric,
-    record_error
+    get_health,
+    record_error,
 )
 
 __all__ = [
@@ -44,7 +42,6 @@ __all__ = [
     "TaskStore",
     "Task",
     "TaskStatus",
-    "TaskService",
     "TaskPriority",
     "AgentType",
     "ValidationError",
@@ -53,10 +50,9 @@ __all__ = [
     # Observability
     "RequestContext",
     "get_request_id",
-    "get_metrics_collector",
-    "get_error_tracker",
+    "get_metrics",
+    "get_errors",
     "get_tracer",
-    "get_health_checker",
-    "record_metric",
+    "get_health",
     "record_error",
 ]

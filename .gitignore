@@ -35,3 +35,7 @@ dist/
 build/
 *.egg-info/
 
+# Archived documentation
+docs/archive/
+**/docs/archive/
+

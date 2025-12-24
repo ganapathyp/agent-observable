@@ -10,6 +10,7 @@ services:
     container_name: taskpilot-prometheus
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/golden-signals-alerts.yml:/etc/prometheus/golden-signals-alerts.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
@@ -17,6 +18,7 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
     restart: unless-stopped
     networks:
       - observability

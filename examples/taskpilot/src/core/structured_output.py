@@ -70,7 +70,7 @@ def parse_task_info_from_response(response: Any) -> TaskInfo:
             logger.debug("Falling back to text parsing from agent_run_response")
             return parse_task_info_from_output(agent_response.text)
     
-    # Strategy 3: Text response (fallback - for backward compatibility)
+    # Strategy 3: Text response (fallback)
     if hasattr(response, 'text'):
         logger.debug("Parsing from text response (fallback)")
         return parse_task_info_from_output(response.text)
@@ -117,10 +117,10 @@ def parse_task_info_from_output(output: str) -> TaskInfo:
     1. Direct JSON parsing (if output is pure JSON)
     2. JSON code block extraction (if wrapped in ```json ... ```)
     3. JSON embedded in text
-    4. Legacy regex parsing (for backward compatibility)
+    4. Regex parsing (fallback)
     
     Note: For production use, prefer function calling which guarantees structured output.
-    This text-based parsing is kept for backward compatibility.
+    This text-based parsing is used as a fallback when structured parsing fails.
     
     Args:
         output: Agent output text
@@ -222,7 +222,7 @@ def _parse_task_info_legacy(output: str) -> TaskInfo:
         return TaskInfo(title=title, priority=priority, description=description)
     except ValueError as e:
         # If validation fails, use defaults
-        logger.error(f"Legacy parsing validation failed: {e}, using defaults")
+        logger.error(f"Regex parsing validation failed: {e}, using defaults")
         return TaskInfo(
             title=title[:500] if title else "Untitled Task",
             priority="medium",

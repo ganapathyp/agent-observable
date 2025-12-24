@@ -5,6 +5,10 @@ global:
     cluster: 'local'
     environment: 'development'
 
+# Alert rules
+rule_files:
+  - 'golden-signals-alerts.yml'
+
 scrape_configs:
   - job_name: 'taskpilot'
     static_configs:

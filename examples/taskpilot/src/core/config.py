@@ -174,6 +174,12 @@ class AppConfig:
     # Tool execution settings
     tool_timeout_seconds: float = 30.0  # Default 30 seconds for tool execution
     
+    # Retry settings
+    retry_max_attempts: int = 3
+    retry_initial_delay: float = 1.0
+    retry_backoff_factor: float = 2.0
+    retry_max_delay: float = 60.0
+    
     @classmethod
     def from_env(cls) -> "AppConfig":
         """Create app configuration from environment variables."""
@@ -193,6 +199,11 @@ class AppConfig:
         
         tool_timeout = float(os.getenv("TOOL_TIMEOUT_SECONDS", "30.0"))
         
+        retry_max_attempts = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
+        retry_initial_delay = float(os.getenv("RETRY_INITIAL_DELAY", "1.0"))
+        retry_backoff_factor = float(os.getenv("RETRY_BACKOFF_FACTOR", "2.0"))
+        retry_max_delay = float(os.getenv("RETRY_MAX_DELAY", "60.0"))
+        
         return cls(
             port=port,
             host=host,
@@ -204,7 +215,11 @@ class AppConfig:
             otel_endpoint=otel_endpoint,
             otel_service_name=otel_service_name,
             workflow_interval_seconds=workflow_interval,
-            tool_timeout_seconds=tool_timeout
+            tool_timeout_seconds=tool_timeout,
+            retry_max_attempts=retry_max_attempts,
+            retry_initial_delay=retry_initial_delay,
+            retry_backoff_factor=retry_backoff_factor,
+            retry_max_delay=retry_max_delay,
         )
 
 @dataclass
@@ -331,14 +346,11 @@ def create_config(env_file_path: Optional[Path] = None, base_dir: Optional[Path]
     return Config.from_env(base_dir=base_dir)
 
 
-# Global config instance (for backward compatibility)
-# Prefer using dependency injection with create_config() in new code
+# Global config instance (singleton pattern)
 _config: Optional[Config] = None
 
 def get_config() -> Config:
-    """Get the global configuration instance (backward compatibility).
-    
-    Note: For new code, prefer using dependency injection with create_config().
+    """Get the global configuration instance.
     
     Returns:
         Global Config instance

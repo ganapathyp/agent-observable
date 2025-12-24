@@ -8,32 +8,25 @@ from pathlib import Path
 from agent_framework import AgentRunContext, TextContent  # type: ignore
 from taskpilot.core.task_store import TaskStore, get_task_store, TaskStatus  # type: ignore
 from taskpilot.core.types import AgentType  # type: ignore
-from taskpilot.core.guardrails.nemo_rails import NeMoGuardrailsWrapper  # type: ignore
-from taskpilot.core.guardrails.decision_logger import get_decision_logger  # type: ignore
-from taskpilot.core.guardrails.opa_tool_validator import OPAToolValidator  # type: ignore
-from taskpilot.core.observability import (  # type: ignore
+from agent_observable_policy import OPAToolValidator  # type: ignore
+from taskpilot.core.observable import (  # type: ignore
     RequestContext,
     get_request_id,
-    get_metrics_collector,
-    get_error_tracker,
+    get_metrics,
+    get_errors,
     get_tracer,
     TraceContext,
-    record_metric,
-    record_error
+    get_guardrails,
+    get_decision_logger,
+    get_opa,
+    record_error,
 )
+from agent_observable_core import (  # type: ignore
+    get_metric_standardizer,
+    get_trace_standardizer,
+)
+from agent_observable_core.llm_cost_tracker import track_llm_metrics  # type: ignore
 from taskpilot.core.metric_names import (  # type: ignore
-    WORKFLOW_RUNS,
-    WORKFLOW_SUCCESS,
-    WORKFLOW_ERRORS,
-    WORKFLOW_LATENCY_MS,
-    agent_invocations,
-    agent_success,
-    agent_errors,
-    agent_latency_ms,
-    agent_guardrails_blocked,
-    agent_guardrails_output_blocked,
-    agent_policy_violations,
-    POLICY_VIOLATIONS_TOTAL,
     TASKS_CREATED,
     TASKS_APPROVED,
     TASKS_REJECTED,
@@ -42,12 +35,17 @@ from taskpilot.core.metric_names import (  # type: ignore
     TASKS_REVIEWER_OUTPUT_EMPTY,
     TASKS_NO_PENDING_FOR_REVIEWER
 )
-from taskpilot.core.trace_names import (  # type: ignore
-    WORKFLOW_RUN as TRACE_WORKFLOW_RUN,
-    agent_run as trace_agent_run
-)
-from taskpilot.core.llm_cost_tracker import track_llm_metrics  # type: ignore
-from taskpilot.core.exceptions import (  # type: ignore
+
+# Get standardizers for generic metrics and traces
+metric_standardizer = get_metric_standardizer(service_name="taskpilot")
+trace_standardizer = get_trace_standardizer(service_name="taskpilot")
+TRACE_WORKFLOW_RUN = trace_standardizer.workflow_run()
+
+
+def trace_agent_run(agent_name: str) -> str:
+    """Get standardized trace name for agent run."""
+    return trace_standardizer.agent_run(agent_name)
+from agent_observable_core.exceptions import (  # type: ignore
     PolicyViolationError,
     GuardrailsBlockedError,
     AgentExecutionError,
@@ -56,19 +54,7 @@ from taskpilot.core.exceptions import (  # type: ignore
 
 logger = logging.getLogger(__name__)
 
-# Global guardrails instance (lazy initialization)
-_guardrails: Optional[NeMoGuardrailsWrapper] = None
-
-
-def _get_guardrails() -> NeMoGuardrailsWrapper:
-    """Get or create global guardrails instance."""
-    global _guardrails
-    if _guardrails is None:
-        # Try to load config from taskpilot directory
-        taskpilot_dir = Path(__file__).parent.parent.parent.parent
-        config_path = taskpilot_dir / "guardrails" / "config.yml"
-        _guardrails = NeMoGuardrailsWrapper(config_path=config_path if config_path.exists() else None)
-    return _guardrails
+# Guardrails is now managed by guardrails_adapter
 
 def _extract_text_from_content(content) -> str:
     """Extract text from various content types."""
@@ -288,15 +274,16 @@ def create_audit_and_policy_middleware(
             
             # Initialize decision logger (start background task if needed)
             decision_logger = get_decision_logger()
-            try:
-                await decision_logger.start()
-            except RuntimeError:
-                # Already started or event loop issue, continue
-                pass
+            if decision_logger:
+                try:
+                    await decision_logger.start()
+                except RuntimeError:
+                    # Already started or event loop issue, continue
+                    pass
             
             # Record metrics (use standardized metric names)
-            metrics = get_metrics_collector()
-            metrics.increment_counter(agent_invocations(agent_name))
+            metrics = get_metrics()
+            metrics.increment_counter(metric_standardizer.agent_invocations(agent_name))
             
             try:
                 # Extract input from messages
@@ -310,10 +297,13 @@ def create_audit_and_policy_middleware(
                 logger.info(f"[AUDIT] {agent_name} Input: {input_text} (request_id={request_id})")
                 
                 # NeMo Guardrails input validation
-                guardrails = _get_guardrails()
-                allowed, reason = await guardrails.validate_input(input_text)
+                guardrails = get_guardrails()
+                if guardrails:
+                    allowed, reason = await guardrails.validate_input(input_text)
+                else:
+                    allowed, reason = True, "Guardrails not enabled"
                 if not allowed:
-                    metrics.increment_counter(agent_guardrails_blocked(agent_name))
+                    metrics.increment_counter(metric_standardizer.agent_guardrails_blocked(agent_name))
                     error = GuardrailsBlockedError(
                         check_type="input",
                         reason=reason,
@@ -322,10 +312,10 @@ def create_audit_and_policy_middleware(
                     logger.error(f"[GUARDRAILS] [{error.error_code}] Input blocked: {reason} (request_id={request_id})")
                     raise error
                 
-                # Legacy policy enforcement (keep for backward compatibility)
+                # Simple keyword-based policy enforcement
                 if input_text and "delete" in input_text.lower():
-                    metrics.increment_counter(agent_policy_violations(agent_name))
-                    metrics.increment_counter(POLICY_VIOLATIONS_TOTAL)  # Aggregate for Golden Signals
+                    metrics.increment_counter(metric_standardizer.agent_policy_violations(agent_name))
+                    metrics.increment_counter(metric_standardizer.policy_violations_total())  # Aggregate for Golden Signals
                     error = PolicyViolationError(
                         policy_type="keyword_filter",
                         reason="'delete' keyword not allowed",
@@ -435,7 +425,7 @@ def create_audit_and_policy_middleware(
                 # NeMo Guardrails output validation
                 allowed, reason = await guardrails.validate_output(output_text)
                 if not allowed:
-                    metrics.increment_counter(agent_guardrails_output_blocked(agent_name))
+                    metrics.increment_counter(metric_standardizer.agent_guardrails_output_blocked(agent_name))
                     logger.error(f"[GUARDRAILS] Output blocked: {reason} (request_id={request_id})")
                     raise ValueError(f"Output validation failed: {reason}")
                 
@@ -449,7 +439,17 @@ def create_audit_and_policy_middleware(
                             if hasattr(msg, 'tool_calls') and msg.tool_calls:
                                 tool_calls_made = True
                                 # Validate each tool call with OPA
-                                opa_validator = OPAToolValidator(use_embedded=True)
+                                opa = get_opa()
+                                decision_logger = get_decision_logger()
+                                metrics = get_metrics()
+                                opa_validator = OPAToolValidator(
+                                    use_embedded=True,
+                                    embedded_opa=opa,
+                                    decision_logger=decision_logger,
+                                    package="taskpilot.tool_calls",
+                                    metrics_collector=metrics,
+                                    service_name="taskpilot",
+                                )
                                 for tool_call in msg.tool_calls:
                                     tool_name = getattr(tool_call, 'function', {}).get('name', '') if hasattr(tool_call, 'function') else ''
                                     tool_params = getattr(tool_call, 'function', {}).get('arguments', {}) if hasattr(tool_call, 'function') else {}
@@ -479,15 +479,15 @@ def create_audit_and_policy_middleware(
                 # Track LLM token usage and cost (if available in response)
                 try:
                     if hasattr(context.result, 'agent_run_response'):
-                        track_llm_metrics(context.result, agent_name, metrics)
+                        track_llm_metrics(context.result, agent_name, metrics, service_name="taskpilot")
                     elif hasattr(context.result, 'usage'):
-                        track_llm_metrics(context.result, agent_name, metrics)
+                        track_llm_metrics(context.result, agent_name, metrics, service_name="taskpilot")
                 except Exception as e:
                     logger.debug(f"Failed to track LLM metrics: {e}")
                 
                 # Record latency metric (use standardized metric name)
                 latency_ms = (time.time() - start_time) * 1000
-                metrics.record_histogram(agent_latency_ms(agent_name), latency_ms)
+                metrics.record_histogram(metric_standardizer.agent_latency_ms(agent_name), latency_ms)
                 
                 # Add rich context to span for better trace visibility
                 span.tags["latency_ms"] = str(latency_ms)
@@ -542,7 +542,17 @@ def create_audit_and_policy_middleware(
                             try:
                                 # Validate create_task tool call with OPA if not already validated
                                 if not tool_calls_made:
-                                    opa_validator = OPAToolValidator(use_embedded=True)
+                                    opa = get_opa()
+                                    decision_logger = get_decision_logger()
+                                    metrics = get_metrics()
+                                    opa_validator = OPAToolValidator(
+                                        use_embedded=True,
+                                        embedded_opa=opa,
+                                        decision_logger=decision_logger,
+                                        package="taskpilot.tool_calls",
+                                        metrics_collector=metrics,
+                                        service_name="taskpilot",
+                                    )
                                     # Use actual parsed values, not raw context
                                     task_params = {
                                         "title": str(title) if title else "",
@@ -628,11 +638,11 @@ def create_audit_and_policy_middleware(
                             logger.error(f"Failed to mark task as executed: {e}", exc_info=True)
                 
                 # Record success metric
-                metrics.increment_counter(agent_success(agent_name))
+                metrics.increment_counter(metric_standardizer.agent_success(agent_name))
                 
             except Exception as e:
                 # Record error with error code if available
-                metrics.increment_counter(agent_errors(agent_name))
+                metrics.increment_counter(metric_standardizer.agent_errors(agent_name))
                 
                 # Extract error code if it's a BaseAgentException
                 error_code = None

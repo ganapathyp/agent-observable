@@ -1,0 +1,17 @@
+[project]
+name = "agent-observable-policy"
+version = "0.1.0"
+description = "Policy decision logging and OPA validation for agents."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

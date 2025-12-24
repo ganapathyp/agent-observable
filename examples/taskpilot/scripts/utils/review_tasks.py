@@ -34,8 +34,8 @@ except Exception:
     pass
 
 from taskpilot.core.task_store import get_task_store, TaskStatus  # type: ignore
-from taskpilot.core.guardrails.decision_log import PolicyDecision, DecisionType, DecisionResult  # type: ignore
-from taskpilot.core.guardrails.decision_logger import get_decision_logger  # type: ignore
+from agent_observable_policy import PolicyDecision, DecisionType, DecisionResult  # type: ignore
+from taskpilot.core.observable import get_decision_logger  # type: ignore
 
 def format_task_compact(task) -> str:
     """Format task for compact display."""

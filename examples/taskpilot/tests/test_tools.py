@@ -147,8 +147,12 @@ class TestAgentTools:
     """Test agent-compatible tools."""
     
     @patch('taskpilot.tools.tools.get_task_store')
-    def test_create_task(self, mock_get_store):
+    @patch('taskpilot.tools.tools._opa_validator')
+    def test_create_task(self, mock_opa_validator, mock_get_store):
         """Test create_task agent tool."""
+        # Mock OPA validation to allow the call
+        mock_opa_validator.validate_tool_call = MagicMock(return_value=(True, "Allowed", False))
+        
         mock_store = MagicMock()
         mock_task = MagicMock()
         mock_task.id = "test_123"
@@ -163,11 +167,16 @@ class TestAgentTools:
         assert "test_123" in result
         mock_store.create_task.assert_called_once_with(
             title="Test Task",
-            priority="high"
+            priority="high",
+            description=""  # description is now a parameter with default ""
         )
     
-    def test_notify_external_system(self):
+    @patch('taskpilot.tools.tools._opa_validator')
+    def test_notify_external_system(self, mock_opa_validator):
         """Test notify_external_system agent tool."""
+        # Mock OPA validation to allow the call
+        mock_opa_validator.validate_tool_call = MagicMock(return_value=(True, "Allowed", False))
+        
         result = notify_external_system("Test message")
         
         assert "[MCP] External system notified" in result

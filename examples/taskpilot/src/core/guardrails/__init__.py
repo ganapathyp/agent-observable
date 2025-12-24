@@ -1,13 +1,21 @@
 """Guardrails module for production safety."""
-from taskpilot.core.guardrails.decision_log import (  # type: ignore
+from agent_observable_policy import (  # type: ignore
     DecisionType,
     DecisionResult,
     PolicyDecision,
+    DecisionLogger,
+    EmbeddedOPA,
+    OPAToolValidator as PolicyOPAToolValidator,
 )
-from taskpilot.core.guardrails.decision_logger import DecisionLogger  # type: ignore
-from taskpilot.core.guardrails.opa_tool_validator import OPAToolValidator  # type: ignore
-from taskpilot.core.guardrails.opa_embedded import EmbeddedOPA, get_embedded_opa  # type: ignore
-from taskpilot.core.guardrails.nemo_rails import NeMoGuardrailsWrapper  # type: ignore
+from agent_observable_policy import OPAToolValidator  # type: ignore
+from taskpilot.core.observable import get_guardrails, get_decision_logger, get_opa  # type: ignore
+from agent_observable_guardrails import NeMoGuardrailsWrapper  # type: ignore
+
+
+def get_embedded_opa():
+    """Get embedded OPA (convenience function)."""
+    return get_opa()
+
 
 __all__ = [
     "DecisionType",
@@ -17,5 +25,8 @@ __all__ = [
     "OPAToolValidator",
     "EmbeddedOPA",
     "get_embedded_opa",
+    "get_decision_logger",
+    "get_opa",
+    "get_guardrails",
     "NeMoGuardrailsWrapper",
 ]

@@ -30,7 +30,8 @@ class TestMiddlewareAsync:
         context = MockContext([MockMessage("user", "Delete all files")])
         next_func = AsyncMock()
         
-        with pytest.raises(ValueError, match="Policy violation"):
+        from agent_observable_core.exceptions import PolicyViolationError
+        with pytest.raises(PolicyViolationError, match=".*delete.*keyword.*not.*allowed|.*Policy violation.*"):
             await middleware(context, next_func)
         
         next_func.assert_not_awaited()

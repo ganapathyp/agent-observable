@@ -27,16 +27,26 @@ build/
 
 # OS
 .DS_Store
+**/.DS_Store
+
+# Backup files
+*.bak
 .tasks.json
+.tasks.json.bak
 
 # Observability data
 traces.jsonl
 decision_logs.jsonl
+metrics.json
 metrics.jsonl
+observability_test_report.json
 
 # Logs
 logs/*.log
 !logs/.gitkeep
+
+# Archived documentation
+docs/archive/
 
 # Testing
 .pytest_cache/
