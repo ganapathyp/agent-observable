@@ -247,7 +247,7 @@ async def test_application_integration():
         
         # Test metrics collector
         import time
-        metrics = get_metrics_collector()
+        metrics = get_metrics()
         unique_counter = f"test.counter.{int(time.time() * 1000)}"
         metrics.increment_counter(unique_counter)
         value = metrics.get_counter(unique_counter)
