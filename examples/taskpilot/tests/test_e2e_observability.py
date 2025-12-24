@@ -6,8 +6,11 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 try:
-    import requests
+    import requests  # type: ignore[import-untyped]  # Installed in .venv, see pyproject.toml
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -166,7 +169,7 @@ async def test_prometheus_integration():
                     up_targets = [t for t in targets if t.get("health") == "up"]
                     _check(f"Prometheus targets: {len(up_targets)}/{len(targets)} up", len(up_targets) > 0)
                 else:
-                    test_check("Prometheus has targets configured", False, warning=True)
+                    _check("Prometheus has targets configured", False, warning=True)
         else:
             # Fallback: just check if Prometheus is accessible
             result = subprocess.run(
@@ -238,7 +241,7 @@ async def test_application_integration():
     
     # Check if we can import observability modules
     try:
-        from taskpilot.core.observable import (
+        from taskpilot.core.observable import (  # type: ignore[import-untyped]  # Local package, path added above
             get_metrics,
             get_health,
             get_tracer
